@@ -178,6 +178,25 @@
   .toggle input:checked + .toggle-slider { background:var(--accent); }
   .toggle input:checked + .toggle-slider:before { transform:translateX(14px); }
 
+  /* SETTINGS OVERLAY */
+  #settings-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:400; align-items:center; justify-content:center; padding:20px; }
+  #settings-overlay.visible { display:flex; }
+  #settings-modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:520px; max-height:90vh; overflow-y:auto; padding:24px; }
+  #settings-modal h2 { font-size:18px; font-weight:700; color:#f1f5f9; margin-bottom:6px; }
+  #settings-modal .settings-sub { font-size:13px; color:var(--text-dim); margin-bottom:24px; }
+  .settings-section { margin-bottom:28px; }
+  .settings-section-title { font-size:13px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:12px; }
+  .settings-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .settings-list-item { display:flex; align-items:center; gap:8px; }
+  .settings-list-item span { flex:1; font-size:14px; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:7px 10px; }
+  .settings-list-item .del-item-btn { background:var(--danger-bg); border:1px solid var(--danger-border); color:#fca5a5; border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer; white-space:nowrap; }
+  .settings-list-item .del-item-btn:hover { opacity:0.8; }
+  .settings-add-row { display:flex; gap:8px; }
+  .settings-add-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; color:var(--text); font-size:14px; outline:none; font-family:inherit; }
+  .settings-add-row input:focus { border-color:var(--accent); }
+  .settings-add-row button { background:var(--accent); border:none; color:#fff; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .settings-footer { display:flex; justify-content:flex-end; padding-top:16px; border-top:1px solid var(--border); }
+
   /* TOAST */
   #toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px 18px; font-size:13px; color:var(--text); box-shadow:0 4px 20px rgba(0,0,0,0.4); opacity:0; transform:translateY(8px); transition:opacity 0.2s,transform 0.2s; pointer-events:none; z-index:200; }
   #toast.show { opacity:1; transform:translateY(0); }
@@ -208,6 +227,7 @@
     </div>
     <button class="btn-ghost" onclick="showImport()">Import CSV</button>
     <button class="btn-ghost" onclick="exportCSV()">Export CSV</button>
+    <button class="btn-ghost" onclick="openSettings()">⚙ Settings</button>
     <button class="btn btn-primary" onclick="showAddForm()">+ Add Item</button>
   </div>
 </div>
@@ -405,13 +425,45 @@
 
 <div id="toast"></div>
 
+<!-- SETTINGS OVERLAY -->
+<div id="settings-overlay" onclick="handleSettingsOverlayClick(event)">
+  <div id="settings-modal">
+    <h2>Settings</h2>
+    <div class="settings-sub">Add or remove rooms and categories. Changes apply immediately across the app.</div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Rooms</div>
+      <div class="settings-list" id="settings-rooms-list"></div>
+      <div class="settings-add-row">
+        <input type="text" id="new-room-input" placeholder="New room name..." onkeydown="if(event.key==='Enter')addRoom()">
+        <button onclick="addRoom()">Add Room</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Categories</div>
+      <div class="settings-list" id="settings-cats-list"></div>
+      <div class="settings-add-row">
+        <input type="text" id="new-cat-input" placeholder="New category name..." onkeydown="if(event.key==='Enter')addCategory()">
+        <button onclick="addCategory()">Add Category</button>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn btn-primary" onclick="closeSettings()">Done</button>
+    </div>
+  </div>
+</div>
+
 <script>
-const ROOMS = ["Living Room","Kitchen","Bedroom","Bathroom","Office","Garage","Garden","Loft","Other"];
-const CATEGORIES = ["Electronics","Furniture","Appliances","Clothing","Jewellery","Art & Collectibles","Tools","Sports & Leisure","Books & Media","Other"];
+const DEFAULT_ROOMS = ["Living Room","Kitchen","Bedroom","Bathroom","Office","Garage","Garden","Loft","Other"];
+const DEFAULT_CATEGORIES = ["Electronics","Furniture","Appliances","Clothing","Jewellery","Art & Collectibles","Tools","Sports & Leisure","Books & Media","Other"];
 const COND_COL = {Excellent:"#22c55e",Good:"#84cc16",Fair:"#f59e0b",Poor:"#ef4444"};
 const CSV_HEADERS = ["Name","Room","Category","Brand","Model","Serial Number","Purchase Date","Purchase Price","Replacement Value","Condition","Status","Last Verified","Warranty Expiry","Warranty Provider","Warranty Reference","Notes","Document Link","Photo Reference"];
 
 let items = [];
+let rooms = [];
+let categories = [];
 let selectedRoom = "All Rooms";
 let selectedCat = "All";
 let editingId = null;
@@ -422,6 +474,14 @@ let pendingImport = [];
 // STORAGE
 function loadItems(){ try{ items=JSON.parse(localStorage.getItem("homeInventory")||"[]"); }catch(e){ items=[]; } }
 function saveItems(){ localStorage.setItem("homeInventory",JSON.stringify(items)); }
+function loadLists(){
+  try{ rooms=JSON.parse(localStorage.getItem("homeRooms")||"null")||DEFAULT_ROOMS.slice(); }catch(e){ rooms=DEFAULT_ROOMS.slice(); }
+  try{ categories=JSON.parse(localStorage.getItem("homeCategories")||"null")||DEFAULT_CATEGORIES.slice(); }catch(e){ categories=DEFAULT_CATEGORIES.slice(); }
+}
+function saveLists(){
+  localStorage.setItem("homeRooms",JSON.stringify(rooms));
+  localStorage.setItem("homeCategories",JSON.stringify(categories));
+}
 
 // UTILS
 function fmt(v){ return v?("£"+Number(v).toLocaleString("en-GB")):"—"; }
@@ -474,13 +534,13 @@ function renderSidebar(){
   items.filter(i=>i.status!=="disposed").forEach(i=>{ rc[i.room]=(rc[i.room]||0)+1; });
   const activeCount = items.filter(i=>i.status!=="disposed").length;
 
-  document.getElementById("room-nav").innerHTML=["All Rooms",...ROOMS].map(r=>{
+  document.getElementById("room-nav").innerHTML=["All Rooms",...rooms].map(r=>{
     const cnt=r==="All Rooms"?activeCount:(rc[r]||0);
     const active=selectedRoom===r?"active":"";
     return `<button class="sidebar-btn ${active}" onclick="selectRoom(${JSON.stringify(r)})"><span>${esc(r)}</span>${cnt>0||r==="All Rooms"?`<span class="sidebar-count">${cnt}</span>`:""}</button>`;
   }).join("");
 
-  document.getElementById("cat-nav").innerHTML=["All",...CATEGORIES].map(c=>{
+  document.getElementById("cat-nav").innerHTML=["All",...categories].map(c=>{
     const active=selectedCat===c?"active active-cat":"";
     return `<button class="sidebar-btn ${active}" onclick="selectCat(${JSON.stringify(c)})"><span>${esc(c)}</span></button>`;
   }).join("");
@@ -637,8 +697,8 @@ function printSummary(){
 
 // FORM
 function populateSelects(){
-  document.getElementById("f-room").innerHTML=ROOMS.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
-  document.getElementById("f-category").innerHTML=CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  document.getElementById("f-room").innerHTML=rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
+  document.getElementById("f-category").innerHTML=categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
 }
 
 function clearForm(){
@@ -903,9 +963,63 @@ function confirmImport(){
 
 function cancelImport(){ pendingImport=[]; document.getElementById("import-preview").style.display="none"; }
 
+// SETTINGS
+function openSettings(){
+  renderSettingsLists();
+  document.getElementById("settings-overlay").classList.add("visible");
+}
+function closeSettings(){
+  document.getElementById("settings-overlay").classList.remove("visible");
+  populateSelects();
+  renderSidebar();
+}
+function handleSettingsOverlayClick(e){
+  if(e.target===document.getElementById("settings-overlay")) closeSettings();
+}
+function renderSettingsLists(){
+  document.getElementById("settings-rooms-list").innerHTML=rooms.map((r,i)=>`
+    <div class="settings-list-item">
+      <span>${esc(r)}</span>
+      <button class="del-item-btn" onclick="deleteRoom(${i})">Remove</button>
+    </div>`).join("");
+  document.getElementById("settings-cats-list").innerHTML=categories.map((c,i)=>`
+    <div class="settings-list-item">
+      <span>${esc(c)}</span>
+      <button class="del-item-btn" onclick="deleteCategory(${i})">Remove</button>
+    </div>`).join("");
+}
+function addRoom(){
+  const input=document.getElementById("new-room-input");
+  const val=input.value.trim();
+  if(!val) return;
+  if(rooms.includes(val)){ toast("Room already exists"); return; }
+  rooms.push(val); saveLists(); input.value="";
+  renderSettingsLists(); toast(`"${val}" added`);
+}
+function deleteRoom(idx){
+  const name=rooms[idx];
+  const inUse=items.some(i=>i.room===name);
+  if(inUse){ toast(`Can't remove — items are assigned to "${name}"`); return; }
+  rooms.splice(idx,1); saveLists(); renderSettingsLists(); toast(`"${name}" removed`);
+}
+function addCategory(){
+  const input=document.getElementById("new-cat-input");
+  const val=input.value.trim();
+  if(!val) return;
+  if(categories.includes(val)){ toast("Category already exists"); return; }
+  categories.push(val); saveLists(); input.value="";
+  renderSettingsLists(); toast(`"${val}" added`);
+}
+function deleteCategory(idx){
+  const name=categories[idx];
+  const inUse=items.some(i=>i.category===name);
+  if(inUse){ toast(`Can't remove — items are assigned to "${name}"`); return; }
+  categories.splice(idx,1); saveLists(); renderSettingsLists(); toast(`"${name}" removed`);
+}
+
 // INIT
 function init(){
-  loadItems(); populateSelects();
+  loadItems(); loadLists(); populateSelects();
   renderSidebar(); renderHeader(); renderList(); updateWarrantyBadge();
 }
 init();
